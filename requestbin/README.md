@@ -1,5 +1,7 @@
 # RequestBin
 
+<img src="https://raw.githubusercontent.com/wenwu449/azure-aci-samples/master/requestbin/image/requestbin.png"/>
+
 This template demonstrates how you can run [RequestBin](https://requestb.in/) in [Azure Container Instances](https://docs.microsoft.com/en-us/azure/container-instances/).
 
 By deploying this template you will get a RequestBin service:
