@@ -16,13 +16,42 @@
         "hostNamePrefix": {
             "type": "string",
             "defaultValue": "[uniqueString(resourceGroup().id)]"
+        },
+        "email": {
+            "type": "string",
+            "metadata": {
+                "description": "Your email address for lets encrypt account"
+            }
+        },
+        "storageAccountName": {
+            "type": "string",
+            "defaultValue": "[uniquestring(resourceGroup().id)]",
+            "metadata": {
+                "description": "Storage Account Name"
+            }
+        },
+        "storageAccountType": {
+            "type": "string",
+            "defaultValue": "Standard_LRS",
+            "allowedValues": [
+                "Standard_LRS",
+                "Standard_GRS",
+                "Standard_ZRS"
+            ],
+            "metadata": {
+                "description": "Storage Account type"
+            }
         }
     },
     "variables": {
         "requestbin_image": "wenwu449/requestbin",
         "redis_image": "library/redis",
         "containerGroupName": "requestbin",
-        "requestbin_port": 8000
+        "caddy_proxy": "proxy / http://127.0.0.1:8000 {\n    transparent\n}",
+        "caddy_content": "[concat(parameters('hostNamePrefix'), '.', parameters('location'), '.azurecontainer.io\n', variables('caddy_proxy'),'\ntls ', parameters('email'))]",
+        "certsShareName": "certs",
+        "az_image": "microsoft/azure-cli",
+        "shareContainerGroupName": "createshare"
     },
     "resources": [
         {
@@ -30,6 +59,9 @@
             "type": "Microsoft.ContainerInstance/containerGroups",
             "apiVersion": "2018-02-01-preview",
             "location": "[parameters('location')]",
+            "dependsOn": [
+                "[concat('Microsoft.ContainerInstance/containerGroups', variables('shareContainerGroupName')]"
+            ],
             "properties": {
                 "containers": [
                     {
@@ -48,13 +80,13 @@
                             ],
                             "resources": {
                                 "requests": {
-                                    "cpu": 0.5,
-                                    "memoryInGb": 0.7
+                                    "cpu": 0.4,
+                                    "memoryInGb": 0.6
                                 }
                             },
                             "ports": [
                                 {
-                                    "port": "[variables('requestbin_port')]"
+                                    "port": 8000
                                 }
                             ]
                         }
@@ -65,8 +97,8 @@
                             "image": "[variables('redis_image')]",
                             "resources": {
                                 "requests": {
-                                    "cpu": 0.5,
-                                    "memoryInGb": 0.7
+                                    "cpu": 0.4,
+                                    "memoryInGb": 0.6
                                 }
                             },
                             "ports": [
@@ -75,27 +107,139 @@
                                 }
                             ]
                         }
+                    },
+                    {
+                        "name": "caddyserver",
+                        "properties": {
+                            "command": [
+                                "/usr/bin/caddy",
+                                "-agree",
+                                "-conf",
+                                "/tmp/caddyfile",
+                                "-log",
+                                "stdout"
+                            ],
+                            "image": "abiosoft/caddy",
+                            "ports": [
+                                {
+                                    "port": "443"
+                                },
+                                {
+                                    "port": "80"
+                                }
+                            ],
+                            "resources": {
+                                "requests": {
+                                    "cpu": 0.2,
+                                    "memoryInGb": 0.3
+                                }
+                            },
+                            "volumeMounts": [
+                                {
+                                    "name": "caddyfile",
+                                    "mountPath": "/tmp",
+                                    "readOnly": false
+                                },
+                                {
+                                    "name": "certs",
+                                    "mountPath": "/root/.caddy"
+                                }
+                            ]
+                        }
                     }
                 ],
-                "restartPolicy": "Never",
+                "restartPolicy": "Always",
                 "ipAddress": {
                     "ports": [
                         {
                             "protocol": "tcp",
-                            "port": "[variables('requestbin_port')]"
+                            "port": "80"
+                        },
+                        {
+                            "protocol": "tcp",
+                            "port": "443"
                         }
                     ],
                     "type": "Public",
                     "dnsNameLabel": "[parameters('hostNamePrefix')]"
                 },
+                "osType": "Linux",
+                "volumes": [
+                    {
+                        "name": "caddyfile",
+                        "secret": {
+                            "caddyfile": "[base64(variables('caddy_content'))]"
+                        }
+                    },
+                    {
+                        "name": "certs",
+                        "azureFile": {
+                            "shareName": "[variables('certsShareName')]",
+                            "storageAccountName": "[parameters('storageAccountName')]",
+                            "storageAccountKey": "[listKeys(parameters('storageAccountName'),'2017-10-01').keys[0].value]"
+                        }
+                    }
+                ]
+            }
+        },
+        {
+            "name": "[variables('shareContainerGroupName')]",
+            "type": "Microsoft.ContainerInstance/containerGroups",
+            "apiVersion": "2018-02-01-preview",
+            "location": "[parameters('location')]",
+            "dependsOn": [
+                "[concat('Microsoft.Storage/storageAccounts/', parameters('storageAccountName'))]"
+            ],
+            "properties": {
+                "containers": [
+                    {
+                        "name": "[variables('certsShareName')]",
+                        "properties": {
+                            "image": "[variables('az_image')]",
+                            "command": [
+                                "/bin/sh",
+                                "-c",
+                                "az storage share create --name [variables('certsShareName')]"
+                            ],
+                            "environmentVariables": [
+                                {
+                                    "name": "AZURE_STORAGE_KEY",
+                                    "value": "[listKeys(parameters('storageAccountName'),'2017-10-01').keys[0].value]"
+                                },
+                                {
+                                    "name": "AZURE_STORAGE_ACCOUNT",
+                                    "value": "[parameters('storageAccountName')]"
+                                }
+                            ],
+                            "resources": {
+                                "requests": {
+                                    "cpu": "[variables('cpuCores')]",
+                                    "memoryInGb": "[variables('memoryInGb')]"
+                                }
+                            }
+                        }
+                    }
+                ],
+                "restartPolicy": "OnFailure",
                 "osType": "Linux"
             }
+        },
+        {
+            "type": "Microsoft.Storage/storageAccounts",
+            "name": "[parameters('storageAccountName')]",
+            "apiVersion": "2017-10-01",
+            "location": "[parameters('location')]",
+            "sku": {
+                "name": "[parameters('storageAccountType')]"
+            },
+            "kind": "Storage",
+            "properties": {}
         }
     ],
     "outputs": {
         "requestbin_url": {
             "type": "string",
-            "value": "[concat('http://', reference(resourceId('Microsoft.ContainerInstance/containerGroups/', variables('containerGroupName'))).ipAddress.fqdn, ':', variables('requestbin_port'))]"
+            "value": "[concat('https://', reference(resourceId('Microsoft.ContainerInstance/containerGroups/', variables('containerGroupName'))).ipAddress.fqdn])"
         }
     }
 }
