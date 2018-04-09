@@ -199,7 +199,7 @@
                             "command": [
                                 "/bin/sh",
                                 "-c",
-                                "az storage share create --name [variables('certsShareName')]"
+                                "[concat('az storage share create --name ', variables('certsShareName'))]"
                             ],
                             "environmentVariables": [
                                 {
@@ -213,8 +213,8 @@
                             ],
                             "resources": {
                                 "requests": {
-                                    "cpu": "[variables('cpuCores')]",
-                                    "memoryInGb": "[variables('memoryInGb')]"
+                                    "cpu": 1.0,
+                                    "memoryInGb": 1.5
                                 }
                             }
                         }
@@ -239,7 +239,7 @@
     "outputs": {
         "requestbin_url": {
             "type": "string",
-            "value": "[concat('https://', reference(resourceId('Microsoft.ContainerInstance/containerGroups/', variables('containerGroupName'))).ipAddress.fqdn])"
+            "value": "[concat('https://', reference(resourceId('Microsoft.ContainerInstance/containerGroups/', variables('containerGroupName'))).ipAddress.fqdn)]"
         }
     }
 }
