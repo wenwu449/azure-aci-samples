@@ -60,7 +60,7 @@
             "apiVersion": "2018-02-01-preview",
             "location": "[parameters('location')]",
             "dependsOn": [
-                "[concat('Microsoft.ContainerInstance/containerGroups', variables('shareContainerGroupName')]"
+                "[concat('Microsoft.ContainerInstance/containerGroups/', variables('shareContainerGroupName'))]"
             ],
             "properties": {
                 "containers": [
